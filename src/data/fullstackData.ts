@@ -1,0 +1,241 @@
+import type {
+  FullStackSkill,
+  FullStackStage,
+  RecentCompletedItem,
+  WeakAreaItem,
+} from "../types"
+
+export const fsRoadmap: FullStackStage[] = [
+  {
+    stage: "STAGE 01 — FRONTEND FUNDAMENTALS",
+    modules: [
+      {
+        id: "01",
+        name: "HTML",
+        percent: 100,
+        topics: "12 / 12",
+        practice: "8 / 8",
+        status: "COMPLETED",
+      },
+      {
+        id: "02",
+        name: "CSS",
+        percent: 100,
+        topics: "15 / 15",
+        practice: "10 / 10",
+        status: "COMPLETED",
+      },
+      {
+        id: "03",
+        name: "Responsive Design",
+        percent: 100,
+        topics: "8 / 8",
+        practice: "5 / 5",
+        status: "COMPLETED",
+      },
+      {
+        id: "04",
+        name: "JavaScript",
+        percent: 85,
+        topics: "20 / 24",
+        practice: "12 / 15",
+        status: "IN PROGRESS",
+      },
+    ],
+  },
+  {
+    stage: "STAGE 02 — MODERN FRONTEND",
+    modules: [
+      {
+        id: "05",
+        name: "React",
+        percent: 78,
+        topics: "18 / 23",
+        practice: "7 / 10",
+        status: "IN PROGRESS",
+      },
+      {
+        id: "06",
+        name: "Components",
+        percent: 0,
+        topics: "0 / 10",
+        practice: "0 / 5",
+        status: "UP NEXT",
+      },
+      {
+        id: "07",
+        name: "State Management",
+        percent: 0,
+        topics: "0 / 14",
+        practice: "0 / 8",
+        status: "UP NEXT",
+      },
+      {
+        id: "08",
+        name: "Hooks",
+        percent: 0,
+        topics: "0 / 12",
+        practice: "0 / 6",
+        status: "UP NEXT",
+      },
+      {
+        id: "09",
+        name: "Routing",
+        percent: 0,
+        topics: "0 / 8",
+        practice: "0 / 4",
+        status: "UP NEXT",
+      },
+    ],
+  },
+  {
+    stage: "STAGE 03 — BACKEND",
+    modules: [
+      {
+        id: "10",
+        name: "Node.js",
+        percent: 0,
+        topics: "0 / 16",
+        practice: "0 / 10",
+        status: "UP NEXT",
+      },
+      {
+        id: "11",
+        name: "Express",
+        percent: 0,
+        topics: "0 / 12",
+        practice: "0 / 8",
+        status: "UP NEXT",
+      },
+      {
+        id: "12",
+        name: "REST APIs",
+        percent: 0,
+        topics: "0 / 10",
+        practice: "0 / 6",
+        status: "UP NEXT",
+      },
+      {
+        id: "13",
+        name: "Authentication",
+        percent: 0,
+        topics: "0 / 14",
+        practice: "0 / 8",
+        status: "UP NEXT",
+      },
+      {
+        id: "14",
+        name: "Validation",
+        percent: 0,
+        topics: "0 / 8",
+        practice: "0 / 4",
+        status: "UP NEXT",
+      },
+    ],
+  },
+  {
+    stage: "STAGE 04 — DATABASE",
+    modules: [
+      {
+        id: "15",
+        name: "SQL",
+        percent: 0,
+        topics: "0 / 14",
+        practice: "0 / 8",
+        status: "UP NEXT",
+      },
+      {
+        id: "16",
+        name: "PostgreSQL",
+        percent: 0,
+        topics: "0 / 10",
+        practice: "0 / 6",
+        status: "UP NEXT",
+      },
+      {
+        id: "17",
+        name: "Database Design",
+        percent: 0,
+        topics: "0 / 12",
+        practice: "0 / 6",
+        status: "UP NEXT",
+      },
+      {
+        id: "18",
+        name: "ORM",
+        percent: 0,
+        topics: "0 / 10",
+        practice: "0 / 5",
+        status: "UP NEXT",
+      },
+    ],
+  },
+  {
+    stage: "STAGE 05 — PRODUCTION",
+    modules: [
+      {
+        id: "19",
+        name: "Git / GitHub",
+        percent: 100,
+        topics: "8 / 8",
+        practice: "4 / 4",
+        status: "COMPLETED",
+      },
+      {
+        id: "20",
+        name: "Testing",
+        percent: 0,
+        topics: "0 / 12",
+        practice: "0 / 6",
+        status: "UP NEXT",
+      },
+      {
+        id: "21",
+        name: "Deployment",
+        percent: 0,
+        topics: "0 / 10",
+        practice: "0 / 5",
+        status: "UP NEXT",
+      },
+      {
+        id: "22",
+        name: "Environment Variables",
+        percent: 0,
+        topics: "0 / 6",
+        practice: "0 / 3",
+        status: "UP NEXT",
+      },
+      {
+        id: "23",
+        name: "CI/CD Basics",
+        percent: 0,
+        topics: "0 / 8",
+        practice: "0 / 4",
+        status: "UP NEXT",
+      },
+    ],
+  },
+]
+
+export const fsProjectSkills: FullStackSkill[] = [
+  { name: "Responsive UI", score: 90 },
+  { name: "React", score: 82 },
+  { name: "Authentication", score: 75 },
+  { name: "REST APIs", score: 68 },
+  { name: "Database", score: 61 },
+  { name: "Deployment", score: 35 },
+]
+
+export const fsWeakAreas: WeakAreaItem[] = [
+  { name: "Backend APIs", score: 42 },
+  { name: "Authentication", score: 35 },
+  { name: "Testing", score: 31 },
+  { name: "Deployment", score: 28 },
+]
+
+export const fsRecentCompleted: RecentCompletedItem[] = [
+  { name: "React Components", date: "Completed today" },
+  { name: "CSS Flexbox", date: "Completed yesterday" },
+  { name: "REST API Basics", date: "Completed 2 days ago" },
+  { name: "SQL Joins", date: "Completed 3 days ago" },
+]
