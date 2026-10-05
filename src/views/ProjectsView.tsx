@@ -1,4 +1,4 @@
-import React from "react"
+import React, { useState, useEffect } from "react"
 import {
   ArrowRight,
   Bell,
@@ -15,8 +15,49 @@ import {
 import { DSAMetricCard } from "../components"
 import { getProjectsData } from "../services"
 
+import { useTeam } from "../context"
+import { supabase } from "../lib/supabaseClient"
+
 export const ProjectsView: React.FC = () => {
-  const { features, team, recentActivity, milestones } = getProjectsData()
+  const { currentTeam, members, sprintDayStatus } = useTeam()
+  const { features, recentActivity, milestones } = getProjectsData()
+
+  const [projectProgressPercent, setProjectProgressPercent] = useState<number>(0)
+  const [tasksCompleted, setTasksCompleted] = useState<number>(0)
+  const [tasksTotal, setTasksTotal] = useState<number>(20)
+
+  useEffect(() => {
+    let isMounted = true
+    if (currentTeam?.id) {
+      supabase
+        .from("projects")
+        .select("id, status, tasks:project_tasks(id, is_completed)")
+        .eq("team_id", currentTeam.id)
+        .then(({ data }) => {
+          if (isMounted && data && data.length > 0) {
+            let total = 0
+            let completed = 0
+            for (const p of data as any[]) {
+              if (Array.isArray(p.tasks)) {
+                total += p.tasks.length
+                completed += p.tasks.filter((t: any) => t.is_completed).length
+              }
+            }
+            if (total > 0) {
+              setTasksTotal(total)
+              setTasksCompleted(completed)
+              setProjectProgressPercent(Math.round((completed / total) * 100))
+            }
+          }
+        })
+    }
+    return () => {
+      isMounted = false
+    }
+  }, [currentTeam?.id])
+
+  const currentDay = sprintDayStatus?.currentDay || 8
+  const displayedMembers = members.length > 0 ? members : []
 
   return (
     <div className="flex-1 flex flex-col min-w-0 h-full">
@@ -54,16 +95,15 @@ export const ProjectsView: React.FC = () => {
           </button>
 
           <div className="hidden sm:flex -space-x-3 hover:-space-x-2 transition-all duration-300">
-            <img
-              src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop&auto=format"
-              alt="User 1"
-              className="w-10 h-10 rounded-full border-2 border-app-bg object-cover shadow-sm z-30"
-            />
-            <img
-              src="https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=100&h=100&fit=crop&auto=format"
-              alt="User 2"
-              className="w-10 h-10 rounded-full border-2 border-app-bg object-cover shadow-sm z-20"
-            />
+            {displayedMembers.slice(0, 3).map((m, idx) => (
+              <img
+                key={m.userId || idx}
+                src={m.avatar}
+                alt={m.name}
+                title={m.name}
+                className="w-10 h-10 rounded-full border-2 border-app-bg object-cover shadow-sm"
+              />
+            ))}
           </div>
 
           <button className="bg-primary-purple hover:bg-deep-purple text-white font-bold text-xs py-2.5 px-4 rounded-xl shadow-md transition-colors flex items-center gap-2 shrink-0">
@@ -79,13 +119,7 @@ export const ProjectsView: React.FC = () => {
           <div className="flex items-center gap-3 overflow-x-auto custom-scrollbar pb-2 sm:pb-0">
             <div className="flex items-center gap-2 bg-surface-white border border-border-light p-1.5 rounded-xl shadow-sm shrink-0">
               <button className="bg-primary-purple/10 text-primary-purple border border-primary-purple/20 px-3 py-1.5 rounded-lg text-xs font-bold">
-                Job Connect
-              </button>
-              <button className="text-text-secondary hover:text-text-primary hover:bg-app-bg px-3 py-1.5 rounded-lg text-xs font-bold transition-colors">
-                E-Commerce
-              </button>
-              <button className="text-text-secondary hover:text-text-primary hover:bg-app-bg px-3 py-1.5 rounded-lg text-xs font-bold transition-colors">
-                Portfolio
+                50 Day Tracker
               </button>
             </div>
             <button className="w-8 h-8 rounded-lg bg-surface-white border border-border-light flex items-center justify-center text-text-secondary hover:text-primary-purple hover:border-primary-purple/30 transition-all shadow-sm shrink-0">
@@ -107,14 +141,17 @@ export const ProjectsView: React.FC = () => {
                     PROJECT PROGRESS
                   </h3>
                   <p className="text-5xl font-extrabold tracking-tight mt-1">
-                    65<span className="text-3xl opacity-80">%</span>
+                    {projectProgressPercent}
+                    <span className="text-3xl opacity-80">%</span>
                   </p>
                 </div>
                 <div className="bg-white/20 backdrop-blur-md rounded-xl p-2.5 px-4 text-center border border-white/10">
                   <p className="text-[10px] uppercase font-bold text-white/80 tracking-wider mb-0.5">
                     Status
                   </p>
-                  <p className="text-xs font-extrabold text-white">ON TRACK</p>
+                  <p className="text-xs font-extrabold text-white">
+                    {projectProgressPercent > 0 ? "IN PROGRESS" : "NOT STARTED"}
+                  </p>
                 </div>
               </div>
 
@@ -124,20 +161,22 @@ export const ProjectsView: React.FC = () => {
                     <p className="text-white/80 text-[10px] uppercase font-bold tracking-wider mb-0.5">
                       Features Completed
                     </p>
-                    <p className="text-sm font-bold">13 / 20</p>
-                  </div>
-                  <div>
-                    <p className="text-white/80 text-[10px] uppercase font-bold tracking-wider mb-0.5">
-                      Projects
+                    <p className="text-sm font-bold">
+                      {tasksCompleted} / {tasksTotal}
                     </p>
-                    <p className="text-sm font-bold">2 Active / 1 Done</p>
                   </div>
                   <div>
                     <p className="text-white/80 text-[10px] uppercase font-bold tracking-wider mb-0.5">
-                      Deployment
+                      Sprint Day
+                    </p>
+                    <p className="text-sm font-bold">Day {currentDay} / 50</p>
+                  </div>
+                  <div>
+                    <p className="text-white/80 text-[10px] uppercase font-bold tracking-wider mb-0.5">
+                      Team
                     </p>
                     <p className="text-sm font-bold flex items-center gap-1">
-                      1 / 2
+                      {members.length} {members.length === 1 ? "Member" : "Members"}
                     </p>
                   </div>
                 </div>
@@ -145,7 +184,7 @@ export const ProjectsView: React.FC = () => {
                 <div className="h-2 w-full bg-black/20 rounded-full overflow-hidden border border-white/10">
                   <div
                     className="h-full bg-white rounded-full"
-                    style={{ width: `65%` }}
+                    style={{ width: `${projectProgressPercent}%` }}
                   ></div>
                 </div>
               </div>
@@ -154,32 +193,33 @@ export const ProjectsView: React.FC = () => {
 
           <div className="xl:col-span-7 grid grid-cols-1 sm:grid-cols-3 gap-5">
             <DSAMetricCard
-              title="Active Projects"
-              mainStat="2"
+              title="Deliverables"
+              mainStat={`${tasksCompleted} / ${tasksTotal}`}
               subStats={[
                 {
-                  label: "Job Connect",
-                  value: "65%",
+                  label: "Completion",
+                  value: `${projectProgressPercent}%`,
                   color: "text-primary-purple",
                 },
-                { label: "E-Commerce", value: "12%", color: "text-yellow-500" },
+                { label: "Phase", value: "Milestone 1", color: "text-yellow-500" },
               ]}
             />
             <DSAMetricCard
-              title="Completed"
-              mainStat="1"
+              title="Project Tasks"
+              mainStat={tasksCompleted > 0 ? String(tasksCompleted) : "0"}
               subStats={[
-                { label: "Portfolio", value: "Done", color: "text-green-500" },
+                { label: "Sprint Day", value: `Day ${currentDay}` },
               ]}
             />
             <DSAMetricCard
               title="Team Contributors"
-              mainStat="4"
-              subStats={[
-                { label: "Siva", value: "Frontend" },
-                { label: "Vasi", value: "Backend" },
-                { label: "Shameem", value: "Database" },
-              ]}
+              mainStat={String(members.length)}
+              subStats={
+                members.slice(0, 3).map((m) => ({
+                  label: m.name.split(" ")[0],
+                  value: m.role,
+                }))
+              }
               isHighlight={true}
             />
           </div>
@@ -342,43 +382,49 @@ export const ProjectsView: React.FC = () => {
               </h3>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {team.map((member, i) => (
-                  <div
-                    key={i}
-                    className="p-4 rounded-2xl border border-border-light/60 bg-app-bg/30 flex flex-col justify-between"
-                  >
-                    <div className="flex items-center gap-3 mb-3">
-                      <img
-                        src={member.avatar}
-                        alt={member.name}
-                        className="w-10 h-10 rounded-full object-cover shadow-sm border border-border-light"
-                      />
-                      <div>
-                        <h4 className="font-bold text-text-primary text-sm">
-                          {member.name}
-                        </h4>
-                        <p className="text-[10px] text-text-secondary font-medium">
-                          {member.role}
-                        </p>
+                {members.length > 0 ? (
+                  members.map((member, i) => (
+                    <div
+                      key={member.userId || i}
+                      className="p-4 rounded-2xl border border-border-light/60 bg-app-bg/30 flex flex-col justify-between"
+                    >
+                      <div className="flex items-center gap-3 mb-3">
+                        <img
+                          src={member.avatar}
+                          alt={member.name}
+                          className="w-10 h-10 rounded-full object-cover shadow-sm border border-border-light"
+                        />
+                        <div>
+                          <h4 className="font-bold text-text-primary text-sm">
+                            {member.name}
+                          </h4>
+                          <p className="text-[10px] text-text-secondary font-medium uppercase">
+                            {member.role || "Member"}
+                          </p>
+                        </div>
                       </div>
-                    </div>
 
-                    <div>
-                      <div className="flex justify-between text-[10px] font-bold mb-1">
-                        <span className="text-text-secondary">Tasks</span>
-                        <span className="text-text-primary">
-                          {member.tasks}
-                        </span>
-                      </div>
-                      <div className="h-1.5 w-full bg-app-bg rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-primary-purple rounded-full"
-                          style={{ width: `${member.percent}%` }}
-                        ></div>
+                      <div>
+                        <div className="flex justify-between text-[10px] font-bold mb-1">
+                          <span className="text-text-secondary">Progress</span>
+                          <span className="text-text-primary">
+                            {member.progress || 0}%
+                          </span>
+                        </div>
+                        <div className="h-1.5 w-full bg-app-bg rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-primary-purple rounded-full"
+                            style={{ width: `${member.progress || 0}%` }}
+                          ></div>
+                        </div>
                       </div>
                     </div>
+                  ))
+                ) : (
+                  <div className="col-span-full py-8 text-center text-text-secondary text-xs">
+                    No team contributors registered yet
                   </div>
-                ))}
+                )}
               </div>
             </div>
 

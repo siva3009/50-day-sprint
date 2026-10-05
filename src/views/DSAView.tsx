@@ -1,4 +1,4 @@
-import React from "react"
+import React, { useEffect, useState } from "react"
 import { BookOpen, Target } from "lucide-react"
 import {
   DifficultyCard,
@@ -10,10 +10,59 @@ import {
   RoadmapTopicCard,
   WeakAreasCard,
 } from "../components"
-import { getDSAData } from "../services"
+import { useAuth, useTeam } from "../context"
+import { getDSAData, fetchUserCheckins, calculateStreak } from "../services"
+import { fetchSprintDayPlan } from "../services/sprintPlanService"
+import { supabase } from "../lib/supabaseClient"
+import type { SprintDayPlan } from "../types/sprintPlan"
 
 export const DSAView: React.FC = () => {
+  const { user } = useAuth()
+  const { currentSprint, sprintDayStatus } = useTeam()
   const { topics, recentProblems, revisionQueue, roadmapSections } = getDSAData()
+
+  const [solvedCount, setSolvedCount] = useState<number>(0)
+  const [streakDays, setStreakDays] = useState<number>(0)
+  const [dayPlan, setDayPlan] = useState<SprintDayPlan | null>(null)
+
+  const currentDay = sprintDayStatus?.currentDay || 8
+
+  useEffect(() => {
+    let isMounted = true
+
+    // Fetch Day plan for currentDay
+    fetchSprintDayPlan(currentDay).then((plan) => {
+      if (isMounted) setDayPlan(plan)
+    }).catch(console.warn)
+
+    if (user && currentSprint?.id) {
+      // Fetch user's real DSA progress
+      supabase
+        .from("user_dsa_progress")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("status", "Solved")
+        .then(({ count }) => {
+          if (isMounted && count !== null) {
+            setSolvedCount(count)
+          }
+        })
+
+      // Fetch user's real streak
+      fetchUserCheckins(user.id, currentSprint.id).then(({ checkins }) => {
+        if (isMounted) {
+          setStreakDays(calculateStreak(checkins))
+        }
+      })
+    }
+
+    return () => {
+      isMounted = false
+    }
+  }, [user, currentSprint?.id, currentDay])
+
+  const dsaTask = dayPlan?.tasks?.find((t) => t.category === "DSA")
+  const dsaPercent = Math.min(100, Math.round((solvedCount / 70) * 100))
 
   return (
     <div className="flex-1 flex flex-col min-w-0 h-full">
@@ -28,41 +77,48 @@ export const DSAView: React.FC = () => {
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-stretch">
           <div className="xl:col-span-5 flex">
             <div className="flex-1">
-              <DSAMainProgress />
+              <DSAMainProgress
+                percent={dsaPercent}
+                solved={solvedCount}
+                total={70}
+                completedTopics={Math.min(17, Math.floor(solvedCount / 4))}
+                totalTopics={17}
+                streakDays={streakDays}
+              />
             </div>
           </div>
           <div className="xl:col-span-7 grid grid-cols-1 sm:grid-cols-3 gap-5">
             <DSAMetricCard
               title="Problems Solved"
-              mainStat="43 / 70"
+              mainStat={`${solvedCount} / 70`}
               subStats={[
-                { label: "Easy", value: "20", color: "text-green-500" },
-                { label: "Medium", value: "18", color: "text-yellow-500" },
-                { label: "Hard", value: "5", color: "text-red-500" },
+                { label: "Easy", value: String(Math.floor(solvedCount * 0.5)), color: "text-green-500" },
+                { label: "Medium", value: String(Math.floor(solvedCount * 0.4)), color: "text-yellow-500" },
+                { label: "Hard", value: String(Math.floor(solvedCount * 0.1)), color: "text-red-500" },
               ]}
             />
             <DSAMetricCard
-              title="This Week"
-              mainStat="12"
+              title="Consistency"
+              mainStat={`${streakDays} Days`}
               subStats={[
                 {
-                  label: "Trend",
-                  value: "+18% vs last week",
-                  color: "text-primary-purple",
+                  label: "Status",
+                  value: streakDays > 0 ? "Active streak" : "Not started",
+                  color: streakDays > 0 ? "text-primary-purple" : "text-text-secondary",
                 },
                 {
-                  label: "Streak",
-                  value: "14 days",
+                  label: "Day",
+                  value: `Day ${currentDay} of 50`,
                   color: "text-text-primary",
                 },
               ]}
             />
             <DSAMetricCard
-              title="Revision"
-              mainStat="8 / 12"
+              title="Daily Goal"
+              mainStat={dsaTask ? "1 Topic" : "Scheduled"}
               subStats={[
-                { label: "Due Today", value: "2 Topics" },
-                { label: "Next", value: "Binary Search" },
+                { label: "Focus", value: dsaTask ? "Strings" : "Fundamentals" },
+                { label: "Sprint Day", value: `Day ${currentDay}` },
               ]}
               isHighlight={true}
             />
@@ -165,21 +221,20 @@ export const DSAView: React.FC = () => {
           <div className="lg:col-span-1 flex flex-col gap-6 w-full">
             <MissionCardTemplate
               title="Today's DSA Mission"
-              day={17}
+              day={currentDay}
               icon={Target}
               highlight={{
                 label: "Topic",
-                value: "Binary Search",
+                value: dsaTask ? dsaTask.title : "Strings: Fundamentals",
                 icon: BookOpen,
               }}
               tasks={[
-                { text: "Understand Binary Search", done: true },
-                { text: "Solve 2 Easy Problems", done: false },
-                { text: "Solve 1 Medium Problem", done: false },
-                { text: "Write solution without reference", done: false },
-                { text: "Complete revision notes", done: false },
+                { text: dsaTask ? dsaTask.title : "Understand Core Pattern", done: solvedCount > 0 },
+                { text: "Solve 2 Practice Problems", done: false },
+                { text: "Write solution with time complexity", done: false },
+                { text: "Record daily check-in", done: false },
               ]}
-              expectedTime="1 hr 15 min"
+              expectedTime={dsaTask ? `${dsaTask.estimated_minutes} min` : "60 min"}
               buttonText="START MISSION"
             />
             <WeakAreasCard />

@@ -1,4 +1,4 @@
-import React from "react"
+import React, { useState, useEffect } from "react"
 import {
   ArrowRight,
   Bell,
@@ -22,7 +22,14 @@ import {
 import { DSAMetricCard } from "../components"
 import { getAnalyticsData } from "../services"
 
+import { useAuth, useTeam } from "../context"
+import { supabase } from "../lib/supabaseClient"
+import { calculateReadinessScore } from "../utils/calculations"
+import { fetchUserCheckins, calculateStreak, calculateTotalStudyHours, type DailyCheckin } from "../services/dailyCheckinService"
+
 export const AnalyticsView: React.FC = () => {
+  const { user } = useAuth()
+  const { currentTeam, currentSprint, members, sprintDayStatus } = useTeam()
   const {
     progress50Day,
     weeklyActivity,
@@ -30,6 +37,65 @@ export const AnalyticsView: React.FC = () => {
     performanceTrends,
     teamAnalytics,
   } = getAnalyticsData()
+
+  const [dsaCount, setDsaCount] = useState<number>(0)
+  const [leetcodeCount, setLeetcodeCount] = useState<number>(0)
+  const [fsCount, setFsCount] = useState<number>(0)
+  const [projectCount, setProjectCount] = useState<number>(0)
+  const [userCheckins, setUserCheckins] = useState<DailyCheckin[]>([])
+
+  useEffect(() => {
+    let isMounted = true
+    if (user) {
+      // Parallel fetch counts & check-ins
+      Promise.all([
+        supabase.from("user_dsa_progress").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("status", "Solved"),
+        supabase.from("user_leetcode_progress").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("status", "Solved"),
+        supabase.from("user_fullstack_progress").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("status", "COMPLETED"),
+        currentTeam?.id
+          ? supabase.from("projects").select("id, tasks:project_tasks(id, is_completed)").eq("team_id", currentTeam.id)
+          : Promise.resolve({ data: null }),
+        currentSprint?.id
+          ? fetchUserCheckins(user.id, currentSprint.id)
+          : Promise.resolve({ checkins: [] as DailyCheckin[] }),
+      ]).then(([dsaRes, lcRes, fsRes, prjRes, checkinRes]) => {
+        if (!isMounted) return
+        if (dsaRes.count !== null) setDsaCount(dsaRes.count)
+        if (lcRes.count !== null) setLeetcodeCount(lcRes.count)
+        if (fsRes.count !== null) setFsCount(fsRes.count)
+        if (prjRes.data) {
+          let prjCompleted = 0
+          for (const p of prjRes.data as any[]) {
+            if (Array.isArray(p.tasks)) {
+              prjCompleted += p.tasks.filter((t: any) => t.is_completed).length
+            }
+          }
+          setProjectCount(prjCompleted)
+        }
+        if (checkinRes && checkinRes.checkins) {
+          setUserCheckins(checkinRes.checkins)
+        }
+      }).catch(console.warn)
+    }
+    return () => {
+      isMounted = false
+    }
+  }, [user, currentTeam?.id, currentSprint?.id])
+
+  const dsaPercent = Math.min(100, Math.round((dsaCount / 70) * 100))
+  const leetcodePercent = Math.min(100, Math.round((leetcodeCount / 150) * 100))
+  const fullstackPercent = Math.min(100, Math.round((fsCount / 23) * 100))
+  const projectPercent = Math.min(100, Math.round((projectCount / 20) * 100))
+
+  const readinessScore = calculateReadinessScore(
+    dsaPercent,
+    leetcodePercent,
+    fullstackPercent,
+    projectPercent,
+  )
+
+  const currentDay = sprintDayStatus?.currentDay || 8
+  const displayedMembers = members.length > 0 ? members : []
 
   return (
     <div className="flex-1 flex flex-col min-w-0 h-full">
@@ -80,16 +146,15 @@ export const AnalyticsView: React.FC = () => {
           </button>
 
           <div className="hidden sm:flex -space-x-3 hover:-space-x-2 transition-all duration-300">
-            <img
-              src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop&auto=format"
-              alt="User 1"
-              className="w-10 h-10 rounded-full border-2 border-app-bg object-cover shadow-sm z-30"
-            />
-            <img
-              src="https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=100&h=100&fit=crop&auto=format"
-              alt="User 2"
-              className="w-10 h-10 rounded-full border-2 border-app-bg object-cover shadow-sm z-20"
-            />
+            {displayedMembers.slice(0, 3).map((m, idx) => (
+              <img
+                key={m.userId || idx}
+                src={m.avatar}
+                alt={m.name}
+                title={m.name}
+                className="w-10 h-10 rounded-full border-2 border-app-bg object-cover shadow-sm"
+              />
+            ))}
           </div>
         </div>
       </header>
@@ -108,40 +173,43 @@ export const AnalyticsView: React.FC = () => {
                     PLACEMENT READINESS
                   </h3>
                   <p className="text-5xl font-extrabold tracking-tight mt-1">
-                    74<span className="text-3xl opacity-80">%</span>
+                    {readinessScore}
+                    <span className="text-3xl opacity-80">%</span>
                   </p>
                 </div>
                 <div className="bg-white/20 backdrop-blur-md rounded-xl p-2.5 px-4 text-center border border-white/20">
                   <p className="text-[10px] uppercase font-bold text-white/90 tracking-wider mb-0.5">
                     Status
                   </p>
-                  <p className="text-xs font-extrabold text-white">ON TRACK</p>
+                  <p className="text-xs font-extrabold text-white">
+                    {readinessScore > 0 ? "IN PROGRESS" : "BASELINE"}
+                  </p>
                 </div>
               </div>
 
               <div className="z-10 mt-5 space-y-3">
                 <p className="text-sm font-bold text-white mb-2">
-                  +6% ahead of expected progress
+                  Sprint Day {currentDay} of 50
                 </p>
                 <div className="grid grid-cols-2 gap-4 bg-black/10 rounded-xl p-3 border border-white/10">
                   <div>
                     <p className="text-white/80 text-[10px] uppercase font-bold tracking-wider mb-0.5">
                       Your Progress
                     </p>
-                    <p className="text-sm font-bold text-white">74%</p>
+                    <p className="text-sm font-bold text-white">{readinessScore}%</p>
                   </div>
                   <div>
                     <p className="text-white/80 text-[10px] uppercase font-bold tracking-wider mb-0.5">
-                      Expected
+                      Sprint Day
                     </p>
-                    <p className="text-sm font-bold text-white">68%</p>
+                    <p className="text-sm font-bold text-white">Day {currentDay}</p>
                   </div>
                   <div className="col-span-2 pt-2 border-t border-white/10 flex justify-between items-center">
                     <span className="text-white/80 text-[10px] uppercase font-bold tracking-wider">
                       Target: 100% by Day 50
                     </span>
                     <span className="text-[10px] font-bold text-white bg-white/20 px-2 py-0.5 rounded-md">
-                      Day 17 / 50
+                      Day {currentDay} / 50
                     </span>
                   </div>
                 </div>
@@ -152,34 +220,34 @@ export const AnalyticsView: React.FC = () => {
           <div className="xl:col-span-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
             <DSAMetricCard
               title="DSA"
-              mainStat="72%"
+              mainStat={`${dsaPercent}%`}
               subStats={[
-                { label: "Problems", value: "43 / 70" },
-                { label: "Trend", value: "+8%", color: "text-green-500" },
+                { label: "Problems", value: `${dsaCount} / 70` },
+                { label: "Target", value: "70 Total" },
               ]}
             />
             <DSAMetricCard
               title="LeetCode"
-              mainStat="64%"
+              mainStat={`${leetcodePercent}%`}
               subStats={[
-                { label: "Solved", value: "87 / 150" },
-                { label: "Trend", value: "+12%", color: "text-green-500" },
+                { label: "Solved", value: `${leetcodeCount} / 150` },
+                { label: "Target", value: "150 Total" },
               ]}
             />
             <DSAMetricCard
               title="Full Stack"
-              mainStat="58%"
+              mainStat={`${fullstackPercent}%`}
               subStats={[
-                { label: "Modules", value: "12 / 20" },
-                { label: "Trend", value: "+9%", color: "text-green-500" },
+                { label: "Modules", value: `${fsCount} / 23` },
+                { label: "Target", value: "23 Total" },
               ]}
             />
             <DSAMetricCard
               title="Projects"
-              mainStat="65%"
+              mainStat={`${projectPercent}%`}
               subStats={[
-                { label: "Features", value: "13 / 20" },
-                { label: "Trend", value: "+15%", color: "text-green-500" },
+                { label: "Tasks", value: `${projectCount} / 20` },
+                { label: "Phase", value: "Milestone 1" },
               ]}
             />
           </div>
@@ -691,44 +759,44 @@ export const AnalyticsView: React.FC = () => {
             <div className="hidden md:block absolute top-1/2 left-4 right-4 h-1 bg-app-bg -z-10 -translate-y-1/2 rounded-full"></div>
             <div
               className="hidden md:block absolute top-1/2 left-4 h-1 bg-primary-purple -z-10 -translate-y-1/2 rounded-full"
-              style={{ width: "30%" }}
+              style={{ width: `${Math.min(100, Math.round((currentDay / 50) * 100))}%` }}
             ></div>
 
             {[
               {
                 day: 10,
                 title: "Foundation",
-                status: "Complete",
-                done: true,
-                current: false,
+                status: currentDay > 10 ? "Complete" : currentDay === 10 ? "In Progress" : "Upcoming",
+                done: currentDay > 10,
+                current: currentDay <= 10,
               },
               {
                 day: 20,
                 title: "Core DSA",
-                status: "In Progress",
-                done: false,
-                current: true,
+                status: currentDay > 20 ? "Complete" : currentDay > 10 && currentDay <= 20 ? "In Progress" : "Upcoming",
+                done: currentDay > 20,
+                current: currentDay > 10 && currentDay <= 20,
               },
               {
                 day: 30,
                 title: "Adv. DSA + Dev",
-                status: "Upcoming",
-                done: false,
-                current: false,
+                status: currentDay > 30 ? "Complete" : currentDay > 20 && currentDay <= 30 ? "In Progress" : "Upcoming",
+                done: currentDay > 30,
+                current: currentDay > 20 && currentDay <= 30,
               },
               {
                 day: 40,
                 title: "Projects + Prep",
-                status: "Upcoming",
-                done: false,
-                current: false,
+                status: currentDay > 40 ? "Complete" : currentDay > 30 && currentDay <= 40 ? "In Progress" : "Upcoming",
+                done: currentDay > 40,
+                current: currentDay > 30 && currentDay <= 40,
               },
               {
                 day: 50,
                 title: "Placement Ready",
-                status: "Target",
-                done: false,
-                current: false,
+                status: currentDay >= 50 ? "Complete" : "Target",
+                done: currentDay >= 50,
+                current: currentDay > 40 && currentDay <= 50,
               },
             ].map((milestone, i) => (
               <div
@@ -738,7 +806,7 @@ export const AnalyticsView: React.FC = () => {
                 <div className="hidden md:block absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap">
                   {milestone.current && (
                     <span className="bg-primary-purple text-white text-[10px] font-bold px-2 py-0.5 rounded-full mb-1">
-                      CURRENT: DAY 17
+                      CURRENT: DAY {currentDay}
                     </span>
                   )}
                 </div>
@@ -784,55 +852,68 @@ export const AnalyticsView: React.FC = () => {
             </h3>
 
             <div className="flex flex-col gap-4 overflow-x-auto custom-scrollbar flex-1">
-              {teamAnalytics.map((member, i) => (
-                <div
-                  key={i}
-                  className="bg-app-bg/50 border border-border-light/50 p-4 rounded-2xl min-w-[300px]"
-                >
-                  <div className="flex justify-between items-center mb-3 border-b border-border-light/50 pb-2">
-                    <span className="font-extrabold text-text-primary text-sm">
-                      {member.name}
-                    </span>
-                    <span className="font-extrabold text-primary-purple text-sm">
-                      {member.percent}%
-                    </span>
+              {displayedMembers.length > 0 ? (
+                displayedMembers.map((member, i) => (
+                  <div
+                    key={member.userId || i}
+                    className="bg-app-bg/50 border border-border-light/50 p-4 rounded-2xl min-w-[300px]"
+                  >
+                    <div className="flex justify-between items-center mb-3 border-b border-border-light/50 pb-2">
+                      <div className="flex items-center gap-2">
+                        <img
+                          src={member.avatar}
+                          alt={member.name}
+                          className="w-6 h-6 rounded-full object-cover"
+                        />
+                        <span className="font-extrabold text-text-primary text-sm">
+                          {member.name}
+                        </span>
+                      </div>
+                      <span className="font-extrabold text-primary-purple text-sm">
+                        {member.progress || 0}%
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-4 gap-2 text-center">
+                      <div>
+                        <p className="text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-0.5">
+                          DSA
+                        </p>
+                        <p className="text-xs font-bold text-text-primary">
+                          {member.progress || 0}%
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-0.5">
+                          LeetCode
+                        </p>
+                        <p className="text-xs font-bold text-text-primary">
+                          {member.progress || 0}%
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-0.5">
+                          Full Stack
+                        </p>
+                        <p className="text-xs font-bold text-text-primary">
+                          {member.progress || 0}%
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-0.5">
+                          Projects
+                        </p>
+                        <p className="text-xs font-bold text-text-primary">
+                          {member.progress || 0}%
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                  <div className="grid grid-cols-4 gap-2 text-center">
-                    <div>
-                      <p className="text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-0.5">
-                        DSA
-                      </p>
-                      <p className="text-xs font-bold text-text-primary">
-                        {member.dsa}%
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-0.5">
-                        LeetCode
-                      </p>
-                      <p className="text-xs font-bold text-text-primary">
-                        {member.leetcode}%
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-0.5">
-                        Full Stack
-                      </p>
-                      <p className="text-xs font-bold text-text-primary">
-                        {member.fullstack}%
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-0.5">
-                        Projects
-                      </p>
-                      <p className="text-xs font-bold text-text-primary">
-                        {member.projects}%
-                      </p>
-                    </div>
-                  </div>
+                ))
+              ) : (
+                <div className="py-12 text-center text-text-secondary text-xs font-medium">
+                  No teammates registered yet
                 </div>
-              ))}
+              )}
             </div>
           </div>
 
@@ -847,7 +928,7 @@ export const AnalyticsView: React.FC = () => {
                   Current Streak
                 </p>
                 <p className="text-lg font-extrabold text-primary-purple flex items-center gap-1.5">
-                  <span className="text-sm">🔥</span> 14 Days
+                  <span className="text-sm">🔥</span> {calculateStreak(userCheckins)} Days
                 </p>
               </div>
               <div className="bg-app-bg p-3 rounded-xl border border-border-light/50">
@@ -855,7 +936,7 @@ export const AnalyticsView: React.FC = () => {
                   Best Streak
                 </p>
                 <p className="text-lg font-extrabold text-text-primary">
-                  21 Days
+                  {calculateStreak(userCheckins)} Days
                 </p>
               </div>
               <div className="bg-app-bg p-3 rounded-xl border border-border-light/50">
@@ -863,7 +944,7 @@ export const AnalyticsView: React.FC = () => {
                   Days Completed
                 </p>
                 <p className="text-lg font-extrabold text-text-primary">
-                  17 / 17
+                  {userCheckins.length} / {currentDay}
                 </p>
               </div>
               <div className="bg-app-bg p-3 rounded-xl border border-border-light/50">
@@ -871,7 +952,17 @@ export const AnalyticsView: React.FC = () => {
                   Avg. Daily Study
                 </p>
                 <p className="text-lg font-extrabold text-text-primary">
-                  4h 12m
+                  {userCheckins.length > 0 ? (
+                    (() => {
+                      const totalHrs = calculateTotalStudyHours(userCheckins)
+                      const avg = totalHrs / userCheckins.length
+                      const h = Math.floor(avg)
+                      const m = Math.round((avg - h) * 60)
+                      return `${h}h ${m}m`
+                    })()
+                  ) : (
+                    "0h 0m"
+                  )}
                 </p>
               </div>
             </div>
@@ -881,10 +972,8 @@ export const AnalyticsView: React.FC = () => {
                 Last 3 Weeks Activity
               </p>
               <div className="flex gap-1.5 flex-wrap">
-                {/* Simulated simple heatmap grid */}
                 {Array.from({ length: 21 }).map((_, i) => {
-                  const isActive = i < 17 // 17 days completed
-                  const intensity = isActive ? Math.max(0.2, Math.random()) : 0 // Random purple opacity for active days
+                  const isActive = i < userCheckins.length
                   return (
                     <div
                       key={i}
@@ -893,7 +982,6 @@ export const AnalyticsView: React.FC = () => {
                           ? "bg-primary-purple"
                           : "bg-app-bg border border-border-light"
                       }`}
-                      style={isActive ? { opacity: intensity } : {}}
                     ></div>
                   )
                 })}
@@ -910,33 +998,33 @@ export const AnalyticsView: React.FC = () => {
                 Interview Readiness
               </h3>
               <span className="text-2xl font-extrabold text-primary-purple">
-                74%
+                {readinessScore}%
               </span>
             </div>
 
             <div className="space-y-4">
               {[
-                { name: "DSA", score: 82, color: "bg-primary-purple" },
+                { name: "DSA", score: dsaPercent, color: "bg-primary-purple" },
                 {
                   name: "Problem Solving",
-                  score: 78,
+                  score: leetcodePercent,
                   color: "bg-primary-purple",
                 },
-                { name: "Full Stack", score: 71, color: "bg-primary-purple" },
-                { name: "Projects", score: 76, color: "bg-primary-purple" },
+                { name: "Full Stack", score: fullstackPercent, color: "bg-primary-purple" },
+                { name: "Projects", score: projectPercent, color: "bg-primary-purple" },
                 {
                   name: "CS Fundamentals",
-                  score: 64,
+                  score: 0,
                   color: "bg-primary-purple",
                 },
                 {
                   name: "Communication",
-                  score: 68,
+                  score: 0,
                   color: "bg-primary-purple",
                 },
                 {
                   name: "Mock Interviews",
-                  score: 52,
+                  score: 0,
                   color: "bg-accent-pink",
                   highlight: true,
                 },
@@ -1037,9 +1125,9 @@ export const AnalyticsView: React.FC = () => {
                   />
                   <p className="text-xs font-medium text-text-secondary leading-tight">
                     <span className="font-bold text-text-primary">
-                      You are 6% ahead
+                      {readinessScore > 0 ? `${readinessScore}% Readiness` : "Sprint in progress"}
                     </span>{" "}
-                    of your expected Day 17 progress.
+                    tracking toward Day {currentDay} targets.
                   </p>
                 </div>
                 <div className="flex items-start gap-2">

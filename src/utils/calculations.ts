@@ -1,17 +1,41 @@
 import type { DSATopic, FullStackStage, ProjectCategory } from "../types"
 
 /**
- * Calculates current sprint day given start date and optional total days
+ * Safely parses a date string ('YYYY-MM-DD' or ISO) as a local calendar date
+ * with midnight time (00:00:00.000) to prevent timezone shifts across UTC boundaries.
+ */
+export function parseLocalDate(dateStr: string): Date {
+  const parts = dateStr.split("T")[0].split("-")
+  if (parts.length === 3) {
+    const year = parseInt(parts[0], 10)
+    const month = parseInt(parts[1], 10) - 1
+    const day = parseInt(parts[2], 10)
+    if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
+      return new Date(year, month, day, 0, 0, 0, 0)
+    }
+  }
+  const d = new Date(dateStr)
+  d.setHours(0, 0, 0, 0)
+  return d
+}
+
+/**
+ * Calculates current sprint day given start date and optional total days.
+ * Dynamically derives day offset for any date.
  */
 export function calculateCurrentDay(
   startDateStr: string,
   totalDays: number = 50,
 ): number {
-  const start = new Date(startDateStr)
+  if (!startDateStr) return 1
+  const start = parseLocalDate(startDateStr)
   const now = new Date()
+  now.setHours(0, 0, 0, 0)
   const diffTime = now.getTime() - start.getTime()
-  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1
-  return Math.max(1, Math.min(diffDays, totalDays))
+  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24))
+  if (diffDays < 0) return 0
+  const dayNumber = diffDays + 1
+  return Math.min(dayNumber, totalDays)
 }
 
 export interface SprintDayCalculation {
@@ -25,7 +49,7 @@ export interface SprintDayCalculation {
 /**
  * Calculates dynamic sprint day and status from start date according to 50-day rules:
  * - Before start date: Day 0 / Not Started
- * - During sprint: Day 1 / 50 through Day 50 / 50
+ * - During sprint: Day 1 / 50 through Day 50 / 50 (e.g. start 2026-09-28 on 2026-10-05 = Day 8 / 50)
  * - After end date: Day 50 / 50, Status = completed
  */
 export function calculateSprintDayStatus(
@@ -42,14 +66,12 @@ export function calculateSprintDayStatus(
     }
   }
 
-  const start = new Date(startDateStr)
-  start.setHours(0, 0, 0, 0)
-
+  const start = parseLocalDate(startDateStr)
   const now = new Date()
   now.setHours(0, 0, 0, 0)
 
   const diffTime = now.getTime() - start.getTime()
-  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24))
+  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24))
 
   if (diffDays < 0) {
     return {

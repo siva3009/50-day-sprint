@@ -1,10 +1,64 @@
-import React from "react"
+import React, { useEffect, useState } from "react"
 import { CheckCircle2, ChevronRight, Clock, Globe, Lock } from "lucide-react"
 import { DSAMetricCard, Header, MissionCardTemplate } from "../components"
 import { getFullStackData } from "../services"
+import { fetchSprintDayPlan } from "../services/sprintPlanService"
+import { supabase } from "../lib/supabaseClient"
+import { useAuth, useTeam } from "../context"
+import type { SprintDayPlan } from "../types/sprintPlan"
 
 export const FullStackView: React.FC = () => {
+  const { user } = useAuth()
+  const { currentSprint, sprintDayStatus } = useTeam()
   const { roadmap, skills, weakAreas, recentCompleted } = getFullStackData()
+
+  const [completedModulesCount, setCompletedModulesCount] = useState<number>(0)
+  const [totalModulesCount, setTotalModulesCount] = useState<number>(23)
+  const [dayPlan, setDayPlan] = useState<SprintDayPlan | null>(null)
+
+  const currentDay = sprintDayStatus?.currentDay || 8
+
+  useEffect(() => {
+    let isMounted = true
+
+    fetchSprintDayPlan(currentDay).then((plan) => {
+      if (isMounted) setDayPlan(plan)
+    }).catch(console.warn)
+
+    if (user) {
+      // Query completed modules count
+      supabase
+        .from("user_fullstack_progress")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("status", "COMPLETED")
+        .then(({ count }) => {
+          if (isMounted && count !== null) {
+            setCompletedModulesCount(count)
+          }
+        })
+
+      // Query total modules count
+      supabase
+        .from("fullstack_modules")
+        .select("id", { count: "exact", head: true })
+        .then(({ count }) => {
+          if (isMounted && count !== null && count > 0) {
+            setTotalModulesCount(count)
+          }
+        })
+    }
+
+    return () => {
+      isMounted = false
+    }
+  }, [user, currentDay])
+
+  const fsTask = dayPlan?.tasks?.find((t) => t.category === "FULLSTACK")
+  const progressPercent = Math.min(
+    100,
+    Math.round((completedModulesCount / totalModulesCount) * 100),
+  )
 
   return (
     <div className="flex-1 flex flex-col min-w-0 h-full">
@@ -28,14 +82,17 @@ export const FullStackView: React.FC = () => {
                     FULL STACK PROGRESS
                   </h3>
                   <p className="text-5xl font-extrabold tracking-tight mt-1">
-                    58<span className="text-3xl opacity-80">%</span>
+                    {progressPercent}
+                    <span className="text-3xl opacity-80">%</span>
                   </p>
                 </div>
                 <div className="bg-white/20 backdrop-blur-md rounded-xl p-2.5 px-4 text-center border border-white/10">
                   <p className="text-[10px] uppercase font-bold text-white/80 tracking-wider mb-0.5">
                     Status
                   </p>
-                  <p className="text-xs font-extrabold text-white">ON TRACK</p>
+                  <p className="text-xs font-extrabold text-white">
+                    {progressPercent > 0 ? "IN PROGRESS" : "NOT STARTED"}
+                  </p>
                 </div>
               </div>
 
@@ -45,19 +102,23 @@ export const FullStackView: React.FC = () => {
                     <p className="text-white/80 text-[10px] uppercase font-bold tracking-wider mb-0.5">
                       Modules Completed
                     </p>
-                    <p className="text-sm font-bold">12 / 20</p>
+                    <p className="text-sm font-bold">
+                      {completedModulesCount} / {totalModulesCount}
+                    </p>
                   </div>
                   <div>
                     <p className="text-white/80 text-[10px] uppercase font-bold tracking-wider mb-0.5">
-                      Project Progress
+                      Sprint Day
                     </p>
-                    <p className="text-sm font-bold">65%</p>
+                    <p className="text-sm font-bold">Day {currentDay} / 50</p>
                   </div>
                   <div>
                     <p className="text-white/80 text-[10px] uppercase font-bold tracking-wider mb-0.5">
-                      Learning Time
+                      Focus
                     </p>
-                    <p className="text-sm font-bold">46 hrs</p>
+                    <p className="text-sm font-bold truncate max-w-[120px]">
+                      {fsTask ? "React Foundations" : "Frontend"}
+                    </p>
                   </div>
                 </div>
 
@@ -66,7 +127,9 @@ export const FullStackView: React.FC = () => {
                     <p className="text-white/70 text-[10px] uppercase font-bold tracking-wider">
                       Current Focus
                     </p>
-                    <p className="text-xs font-bold mt-0.5">React Hooks</p>
+                    <p className="text-xs font-bold mt-0.5 truncate max-w-[200px]">
+                      {fsTask ? fsTask.title : "React Foundations & JSX"}
+                    </p>
                   </div>
                   <ChevronRight size={14} className="text-white/50" />
                   <div className="text-right">
@@ -83,34 +146,28 @@ export const FullStackView: React.FC = () => {
           <div className="xl:col-span-7 grid grid-cols-1 sm:grid-cols-3 gap-5">
             <DSAMetricCard
               title="Technologies"
-              mainStat="12 / 20"
+              mainStat={`${completedModulesCount} / ${totalModulesCount}`}
               subStats={[
-                { label: "Completed", value: "12", color: "text-green-500" },
-                { label: "In Progress", value: "3", color: "text-yellow-500" },
-                { label: "Upcoming", value: "5", color: "text-text-secondary" },
+                { label: "Completed", value: String(completedModulesCount), color: "text-green-500" },
+                { label: "Remaining", value: String(totalModulesCount - completedModulesCount), color: "text-text-secondary" },
               ]}
             />
             <DSAMetricCard
-              title="This Week"
-              mainStat="9 hrs"
+              title="Curriculum"
+              mainStat={fsTask ? "1 Module" : "Day 8 Plan"}
               subStats={[
-                { label: "Learning", value: "6 hrs" },
-                { label: "Building", value: "3 hrs" },
-                {
-                  label: "Trend",
-                  value: "+12% vs last week",
-                  color: "text-primary-purple",
-                },
+                { label: "Stage", value: "Frontend Foundations" },
+                { label: "Topic", value: "React & JSX" },
               ]}
             />
             <DSAMetricCard
               title="Project"
-              mainStat="65%"
+              mainStat={completedModulesCount > 0 ? "Active" : "Not started"}
               subStats={[
-                { label: "Features", value: "13 / 20" },
+                { label: "Sprint Day", value: `Day ${currentDay}` },
                 {
                   label: "Status",
-                  value: "In Development",
+                  value: completedModulesCount > 0 ? "In Development" : "Not started",
                   color: "text-primary-purple",
                 },
               ]}
@@ -338,21 +395,20 @@ export const FullStackView: React.FC = () => {
           <div className="lg:col-span-1 flex flex-col gap-6 w-full">
             <MissionCardTemplate
               title="Today's Full Stack Mission"
-              day={17}
+              day={currentDay}
               icon={Globe}
               highlight={{
                 label: "Current Module",
-                value: "React Hooks",
+                value: fsTask ? fsTask.title : "React Foundations & JSX",
                 icon: Globe,
               }}
               tasks={[
-                { text: "Review useState", done: true },
-                { text: "Learn useEffect", done: false },
-                { text: "Practice custom hooks", done: false },
-                { text: "Build one mini component", done: false },
-                { text: "Add hooks to project", done: false },
+                { text: fsTask ? fsTask.title : "Virtual DOM & JSX compilation", done: completedModulesCount > 0 },
+                { text: "Component lifecycle & state flow", done: false },
+                { text: "Practice in project sandbox", done: false },
+                { text: "Record daily check-in", done: false },
               ]}
-              expectedTime="1 hr 30 min"
+              expectedTime={fsTask ? `${fsTask.estimated_minutes} min` : "40 min"}
               buttonText="START MISSION"
             />
 

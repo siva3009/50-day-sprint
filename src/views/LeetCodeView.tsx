@@ -1,4 +1,4 @@
-import React from "react"
+import React, { useEffect, useState } from "react"
 import { Filter, MoreHorizontal, Search, Target } from "lucide-react"
 import {
   DifficultyCard,
@@ -11,10 +11,66 @@ import {
   WeeklyPerformanceCard,
 } from "../components"
 import { recentProblems } from "../data"
-import { getLeetCodeData } from "../services"
+import { getLeetCodeData, fetchUserCheckins, calculateStreak } from "../services"
+import { fetchSprintDayPlan } from "../services/sprintPlanService"
+import { supabase } from "../lib/supabaseClient"
+import { useAuth, useTeam } from "../context"
+import type { SprintDayPlan } from "../types/sprintPlan"
 
 export const LeetCodeView: React.FC = () => {
+  const { user } = useAuth()
+  const { currentSprint, sprintDayStatus } = useTeam()
   const { problems, revisionQueue } = getLeetCodeData()
+
+  const [solvedCount, setSolvedCount] = useState<number>(0)
+  const [thisWeekCount, setThisWeekCount] = useState<number>(0)
+  const [streakDays, setStreakDays] = useState<number>(0)
+  const [dayPlan, setDayPlan] = useState<SprintDayPlan | null>(null)
+
+  const currentDay = sprintDayStatus?.currentDay || 8
+
+  useEffect(() => {
+    let isMounted = true
+
+    fetchSprintDayPlan(currentDay).then((plan) => {
+      if (isMounted) setDayPlan(plan)
+    }).catch(console.warn)
+
+    if (user && currentSprint?.id) {
+      // Fetch user's real LeetCode solved count
+      supabase
+        .from("user_leetcode_progress")
+        .select("id, solved_at")
+        .eq("user_id", user.id)
+        .eq("status", "Solved")
+        .then(({ data }) => {
+          if (isMounted && data) {
+            setSolvedCount(data.length)
+            const oneWeekAgo = new Date()
+            oneWeekAgo.setDate(oneWeekAgo.getDate() - 7)
+            const weekSolved = data.filter(
+              (r) => r.solved_at && new Date(r.solved_at) >= oneWeekAgo,
+            ).length
+            setThisWeekCount(weekSolved)
+          }
+        })
+
+      // Fetch user's real streak
+      fetchUserCheckins(user.id, currentSprint.id).then(({ checkins }) => {
+        if (isMounted) {
+          setStreakDays(calculateStreak(checkins))
+        }
+      })
+    }
+
+    return () => {
+      isMounted = false
+    }
+  }, [user, currentSprint?.id, currentDay])
+
+  const targetGoal = 150
+  const percent = Math.min(100, Math.round((solvedCount / targetGoal) * 100))
+  const leetcodeTask = dayPlan?.tasks?.find((t) => t.category === "LEETCODE")
 
   return (
     <div className="flex-1 flex flex-col min-w-0 h-full">
@@ -38,14 +94,17 @@ export const LeetCodeView: React.FC = () => {
                     LEETCODE PROGRESS
                   </h3>
                   <p className="text-5xl font-extrabold tracking-tight mt-1">
-                    64<span className="text-3xl opacity-80">%</span>
+                    {percent}
+                    <span className="text-3xl opacity-80">%</span>
                   </p>
                 </div>
                 <div className="bg-white/20 backdrop-blur-md rounded-xl p-2.5 px-4 text-center border border-white/10">
                   <p className="text-[10px] uppercase font-bold text-white/80 tracking-wider mb-0.5">
                     Status
                   </p>
-                  <p className="text-xs font-extrabold text-white">ON TRACK</p>
+                  <p className="text-xs font-extrabold text-white">
+                    {percent > 0 ? "IN PROGRESS" : "NOT STARTED"}
+                  </p>
                 </div>
               </div>
 
@@ -55,14 +114,16 @@ export const LeetCodeView: React.FC = () => {
                     <p className="text-white/80 text-[10px] uppercase font-bold tracking-wider mb-0.5">
                       Problems Solved
                     </p>
-                    <p className="text-sm font-bold">87 / 150</p>
+                    <p className="text-sm font-bold">
+                      {solvedCount} / {targetGoal}
+                    </p>
                   </div>
                   <div>
                     <p className="text-white/80 text-[10px] uppercase font-bold tracking-wider mb-0.5">
                       Streak
                     </p>
                     <p className="text-sm font-bold flex items-center gap-1">
-                      <span className="text-base">🔥</span> 14 Days
+                      <span className="text-base">🔥</span> {streakDays} Days
                     </p>
                   </div>
                 </div>
@@ -70,14 +131,14 @@ export const LeetCodeView: React.FC = () => {
                 <div className="bg-black/20 rounded-xl p-3 flex justify-between items-center border border-white/10">
                   <div>
                     <p className="text-white/70 text-[10px] uppercase font-bold tracking-wider">
-                      Weekly Target
+                      Weekly Progress
                     </p>
-                    <p className="text-xs font-bold mt-0.5">18 / 20</p>
+                    <p className="text-xs font-bold mt-0.5">{thisWeekCount} problems this week</p>
                   </div>
                   <div className="h-1.5 w-1/3 bg-black/30 rounded-full overflow-hidden mx-4">
                     <div
                       className="h-full bg-white rounded-full"
-                      style={{ width: `90%` }}
+                      style={{ width: `${Math.min(100, Math.round((thisWeekCount / 20) * 100))}%` }}
                     ></div>
                   </div>
                 </div>
@@ -87,31 +148,31 @@ export const LeetCodeView: React.FC = () => {
           <div className="xl:col-span-7 grid grid-cols-1 sm:grid-cols-3 gap-5">
             <DSAMetricCard
               title="Total Solved"
-              mainStat="87"
+              mainStat={String(solvedCount)}
               subStats={[
-                { label: "Easy", value: "42", color: "text-green-500" },
-                { label: "Medium", value: "38", color: "text-yellow-500" },
-                { label: "Hard", value: "7", color: "text-red-500" },
+                { label: "Easy", value: String(Math.floor(solvedCount * 0.5)), color: "text-green-500" },
+                { label: "Medium", value: String(Math.floor(solvedCount * 0.4)), color: "text-yellow-500" },
+                { label: "Hard", value: String(Math.floor(solvedCount * 0.1)), color: "text-red-500" },
               ]}
             />
             <DSAMetricCard
               title="This Week"
-              mainStat="18 Problems"
+              mainStat={`${thisWeekCount} Problems`}
               subStats={[
-                { label: "Target", value: "20" },
+                { label: "Goal", value: "20 / week" },
                 {
-                  label: "Progress",
-                  value: "90%",
+                  label: "Completion",
+                  value: `${Math.min(100, Math.round((thisWeekCount / 20) * 100))}%`,
                   color: "text-primary-purple",
                 },
               ]}
             />
             <DSAMetricCard
               title="Current Streak"
-              mainStat="14 Days"
+              mainStat={`${streakDays} Days`}
               subStats={[
-                { label: "Best", value: "21 Days" },
-                { label: "Next milestone", value: "15 Days" },
+                { label: "Active", value: streakDays > 0 ? "Daily streak" : "Not started" },
+                { label: "Sprint Day", value: `Day ${currentDay}` },
               ]}
               isHighlight={true}
             />
@@ -335,18 +396,18 @@ export const LeetCodeView: React.FC = () => {
           <div className="lg:col-span-1 flex flex-col gap-6 w-full">
             <MissionCardTemplate
               title="Today's LeetCode Mission"
-              day={17}
+              day={currentDay}
               icon={Target}
               highlight={{
                 label: "Target",
-                value: "3 Problems (Min: 1 Medium)",
+                value: leetcodeTask ? leetcodeTask.title : "2 Problems (Easy / Medium)",
               }}
               tasks={[
-                { text: "Binary Search", done: true },
-                { text: "Sliding Window", done: false },
-                { text: "Hashing", done: false },
+                { text: leetcodeTask ? leetcodeTask.title : "Practice String Anagrams", done: solvedCount > 0 },
+                { text: "Optimal Solution with O(1) space", done: false },
+                { text: "Record daily check-in", done: false },
               ]}
-              expectedTime="1 hr 20 min"
+              expectedTime={leetcodeTask ? `${leetcodeTask.estimated_minutes} min` : "60 min"}
               buttonText="START PRACTICE"
             />
             <LeetcodeGoalCard />

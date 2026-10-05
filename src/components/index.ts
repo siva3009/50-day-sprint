@@ -15,6 +15,7 @@ export * from "./dashboard/DashboardMissionCard"
 export * from "./dashboard/DashboardReadinessCard"
 export * from "./dashboard/DashboardProgressCard"
 export * from "./dashboard/DashboardFocusCard"
+export * from "./dashboard/DailyCheckinModal"
 
 // DSA components
 export * from "./dsa/DSAMainProgress"

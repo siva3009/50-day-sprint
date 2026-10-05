@@ -37,6 +37,7 @@ export interface TeamMemberModel {
   avatar: string
   email?: string
   joinedAt: string
+  progress?: number
 }
 
 export interface ActiveSprintModel {

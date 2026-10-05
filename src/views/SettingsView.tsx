@@ -17,6 +17,9 @@ import { Header } from "../components/common/Header"
 import { useAuth } from "../context/AuthContext"
 import { useTeam } from "../context"
 import { getSettingsData } from "../services/settingsService"
+import { supabase } from "../lib/supabaseClient"
+import { calculateReadinessScore } from "../utils/calculations"
+import { fetchUserCheckins, calculateStreak } from "../services/dailyCheckinService"
 import type { SettingsTabName } from "../types"
 
 export default function SettingsView() {
@@ -36,6 +39,33 @@ export default function SettingsView() {
   const [codeCopied, setCodeCopied] = useState(false)
   const [leavingTeam, setLeavingTeam] = useState(false)
   const [leaveError, setLeaveError] = useState<string | null>(null)
+
+  const [userStreak, setUserStreak] = useState<number>(0)
+  const [userReadiness, setUserReadiness] = useState<number>(0)
+
+  React.useEffect(() => {
+    let isMounted = true
+    if (user && currentSprint?.id) {
+      Promise.all([
+        fetchUserCheckins(user.id, currentSprint.id),
+        supabase.from("user_dsa_progress").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("status", "Solved"),
+        supabase.from("user_leetcode_progress").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("status", "Solved"),
+        supabase.from("user_fullstack_progress").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("status", "COMPLETED"),
+      ]).then(([checkinRes, dsaRes, lcRes, fsRes]) => {
+        if (!isMounted) return
+        if (checkinRes && checkinRes.checkins) {
+          setUserStreak(calculateStreak(checkinRes.checkins))
+        }
+        const dsaP = Math.min(100, Math.round(((dsaRes.count || 0) / 70) * 100))
+        const lcP = Math.min(100, Math.round(((lcRes.count || 0) / 150) * 100))
+        const fsP = Math.min(100, Math.round(((fsRes.count || 0) / 23) * 100))
+        setUserReadiness(calculateReadinessScore(dsaP, lcP, fsP, 0))
+      }).catch(console.warn)
+    }
+    return () => {
+      isMounted = false
+    }
+  }, [user, currentSprint?.id])
 
   // Real profile fields bound to auth profile with default fallbacks
   const [fullName, setFullName] = useState(authProfile?.name ?? defaultProfile.name)
@@ -128,14 +158,14 @@ export default function SettingsView() {
                 <p className="text-[10px] text-text-secondary font-bold uppercase tracking-wider mb-0.5">
                   Progress
                 </p>
-                <p className="text-xs font-bold text-text-primary">78%</p>
+                <p className="text-xs font-bold text-text-primary">{userReadiness}%</p>
               </div>
               <div className="text-right">
                 <p className="text-[10px] text-text-secondary font-bold uppercase tracking-wider mb-0.5">
                   Streak
                 </p>
                 <p className="text-xs font-bold text-text-primary flex items-center gap-1 justify-end">
-                  <span className="text-sm">🔥</span> 14 Days
+                  <span className="text-sm">🔥</span> {userStreak} Days
                 </p>
               </div>
             </div>
@@ -499,42 +529,41 @@ export default function SettingsView() {
                     </div>
 
                     <div className="flex flex-col gap-3">
-                      {(members.length > 0
-                        ? members.map((m) => ({
-                            name: m.name,
-                            avatar: m.avatar,
-                            owner: m.role === "owner",
-                          }))
-                        : teamMembers
-                      ).map((member, i) => (
-                        <div
-                          key={i}
-                          className="flex items-center justify-between p-3 rounded-xl border border-border-light/50 bg-app-bg/50"
-                        >
-                          <div className="flex items-center gap-3">
-                            <img
-                              src={member.avatar}
-                              alt={member.name}
-                              className="w-10 h-10 rounded-full object-cover shadow-sm border border-border-light"
-                            />
-                            <div>
-                              <p className="text-sm font-bold text-text-primary flex items-center gap-2">
-                                {member.name}
-                                {member.owner && (
-                                  <span className="bg-primary-purple/10 text-primary-purple border border-primary-purple/20 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">
-                                    Owner
-                                  </span>
-                                )}
-                              </p>
+                      {members.length > 0 ? (
+                        members.map((member, i) => (
+                          <div
+                            key={member.userId || i}
+                            className="flex items-center justify-between p-3 rounded-xl border border-border-light/50 bg-app-bg/50"
+                          >
+                            <div className="flex items-center gap-3">
+                              <img
+                                src={member.avatar}
+                                alt={member.name}
+                                className="w-10 h-10 rounded-full object-cover shadow-sm border border-border-light"
+                              />
+                              <div>
+                                <p className="text-sm font-bold text-text-primary flex items-center gap-2">
+                                  {member.name}
+                                  {member.role === "owner" && (
+                                    <span className="bg-primary-purple/10 text-primary-purple border border-primary-purple/20 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">
+                                      Owner
+                                    </span>
+                                  )}
+                                </p>
+                              </div>
                             </div>
+                            {member.role !== "owner" && teamRole === "owner" && (
+                              <span className="text-[10px] font-bold text-text-secondary px-2 py-1 bg-surface-white border border-border-light rounded-lg">
+                                Member
+                              </span>
+                            )}
                           </div>
-                          {!member.owner && teamRole === "owner" && (
-                            <span className="text-[10px] font-bold text-text-secondary px-2 py-1 bg-surface-white border border-border-light rounded-lg">
-                              Member
-                            </span>
-                          )}
+                        ))
+                      ) : (
+                        <div className="py-6 text-center text-text-secondary text-xs">
+                          No team members found. Invite teammates using your team code!
                         </div>
-                      ))}
+                      )}
                     </div>
                   </div>
                 </div>
